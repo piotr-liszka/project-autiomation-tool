@@ -1,0 +1,8 @@
+dist
+config.json
+node_modules
+/.idea
+
+# System Files
+.DS_Store
+Thumbs.db
