@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import {program} from 'commander';
 import clear from "clear";
-// import chalk from "chalk";
 import figlet from "figlet";
 import i18n from "./assets/i18n.js";
 import {Logger} from "tslog";
@@ -9,7 +8,8 @@ import {Console} from "node:console";
 import * as fs from "node:fs";
 import Configstore from 'configstore';
 import {GithubClient} from "./core/github-repository.js";
-import {timeInStatus} from "./time-in-status/command.js";
+import {timeInStatus} from "./times/times.command.js";
+import {ValidationError} from "./core/utils/error.js";
 
 clear();
 
@@ -38,7 +38,6 @@ console = {
 
 console.log("Logger initialized");
 
-
 program
   .version('1.0.0')
   .description(
@@ -56,7 +55,6 @@ const catchErrors = async (param: () => Promise<void>) => {
 }
 
 const initializeConfig = (configPath: string) => {
-
   const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
   return new Configstore(packageJson.name, {foo: 'bar'}, {
@@ -77,20 +75,27 @@ const fromArgsOrConfig = (args: any, configStore: Configstore, key: string) => {
 
 program
   .command('time-in-status')
+  .description(i18n.timeInStatus)
   .option('-c, --configFile <configFile>', i18n.configFilePath)
   .option('-gt, --ghToken <ghToken>', i18n.ghToken)
   .option('-go, --ghOrganizationName <ghOrganizationName>', i18n.ghOrganizationName)
   .option('-gp, --ghProjectNumber <ghProjectNumber>', i18n.ghProjectNumber)
-  .argument('<query>', 'Query to search')
+  .argument('<query>', i18n.queryToStart)
   .action(async (query, args, command) => {
     await catchErrors(async () => {
       const configStore = initializeConfig(args?.configFile ?? './config.json');
       const organizationName = fromArgsOrConfig(args, configStore, 'ghOrganizationName');
       const projectNumber = fromArgsOrConfig(args, configStore, 'ghProjectNumber');
 
-      const client = GithubClient.fromToken(args.ghToken);
+      if (!args.ghToken) {
+        throw ValidationError.fromString(i18n.ghTokenRequired);
+      }
 
-      await timeInStatus({
+      const client = GithubClient.fromToken(args.ghToken, configStore);
+
+      await timeInStatus(
+        configStore,
+        {
           query,
           organizationName,
           projectNumber
@@ -98,7 +103,7 @@ program
         client
       );
     })
-  });
+  })
 
 try {
   program.parse(process.argv);

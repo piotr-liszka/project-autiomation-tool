@@ -1,7 +1,7 @@
 import {ContentModel} from './content.js';
 import {UserModel} from "./user.js";
-import {IssueMetadata} from "./issue-metadata.js";
-import {CommentModel} from "./comment";
+import {CommentModel} from "./comment.js";
+import {ProjectModel} from "./project.js";
 
 export type IssuePriority = 'high' | 'medium' | 'low';
 export type IssueType = 'bug' | 'story' | 'epic';
@@ -17,17 +17,14 @@ export class IssueModel {
     public params: {
       id: {
         v2: string;
-        global: string;
         number: number
       }
+      author: UserModel;
       type: IssueType;
       title: string;
       status: IssueStatus;
       priority: IssuePriority;
-      project?: {
-        id: string;
-        key: number;
-      };
+      project?: ProjectModel,
       labels: string[];
       mondayUrl?: string;
       freshdeskUrl?: string;
@@ -36,8 +33,9 @@ export class IssueModel {
       url: string;
       comments: CommentModel[];
       eta?: Date;
+      startDate?: Date;
     },
-    public metadata: IssueMetadata = new IssueMetadata(),
+    public id: string,
     public createdAt?: Date,
     public updatedAt?: Date,
   ) {

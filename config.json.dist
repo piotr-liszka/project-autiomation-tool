@@ -1,4 +1,10 @@
 {
 	"ghOrganizationName": "acme",
-	"ghProjectNumber": 1
+	"ghProjectNumber": 1,
+    "repoName": "lorem-ipsum",
+    "startStatus": "development",
+    "pathToRepo": "./",
+    "etaTransformer": {
+        "endOfTheDay": true
+    }
 }

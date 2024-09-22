@@ -19,3 +19,9 @@ export class AppError extends Error {
     return new AppError(String(error), '', 'UnknownError');
   }
 }
+
+export class ValidationError extends AppError {
+  static fromString(message: string) {
+    return new ValidationError(String(message), 'ValidationError');
+  }
+}

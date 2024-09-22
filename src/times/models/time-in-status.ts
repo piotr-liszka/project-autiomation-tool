@@ -1,7 +1,9 @@
-import {IssueModel, IssueStatus} from "../core/models/issue.js";
-import timeDelta from "time-delta";
+import {IssueModel, IssueStatus} from "../../core/models/issue.js";
+import {formatDate} from "../../core/utils/date.js";
 
 export type TimeInStatusMetadata = {
+  originalStart?: Date,
+  originalEta?: Date,
   statusChanges?: {
     status: IssueStatus,
   }[]
@@ -9,9 +11,10 @@ export type TimeInStatusMetadata = {
 
 export class TimeInStatus {
   constructor(
-    private currentStatus: IssueStatus,
+    public currentStatus: IssueStatus,
     private commentMetadata: Partial<TimeInStatusMetadata>,
-    private eta?: Date,
+    public actualStart?: Date,
+    public actualEta?: Date,
   ) {
   }
 
@@ -19,14 +22,19 @@ export class TimeInStatus {
     return this.commentMetadata.statusChanges ?? [];
   }
 
-  static fromIssue(issue: IssueModel, metadata: Partial<TimeInStatusMetadata>) {
+  static fromIssue(issue: IssueModel, metadata?: Partial<TimeInStatusMetadata>) {
     if (!issue.params.id) {
       throw new Error('Issue id is required to create a TimeInStatus');
     }
 
     return new TimeInStatus(
       issue.params.status,
-      metadata,
+      {
+        ...metadata,
+        originalEta: metadata?.originalEta ?? issue.params.eta,
+        originalStart: metadata?.originalStart ?? issue.params.startDate,
+      },
+      issue.params.startDate,
       issue.params.eta,
     )
   }
@@ -49,37 +57,24 @@ export class TimeInStatus {
     })
   }
 
-  get timeInStatus() {
-    const statuses = new Map<string, { from: Date, to: Date }>()
-
-    return '';
-  }
-
-  getMetadata(): TimeInStatusMetadata {
+  get metadata(): TimeInStatusMetadata {
     return {
+      originalStart: this.commentMetadata.originalStart,
+      originalEta: this.commentMetadata.originalEta,
       statusChanges: this.statusChanges
     };
   }
 
 
   recalculateDeltaTimes() {
-
     const periods = new Set<{
       from: Date,
       to: Date,
       status: IssueStatus,
       delta: string,
-      pastEta: boolean
+      pastOriginalEta: boolean
+      pastActualEta: boolean
     }>()
-
-    const instance = timeDelta.create({
-      locale: 'en', // default
-    });
-    let etaPlus: Date;
-    if(this.eta) {
-      etaPlus = new Date(this.eta);
-      etaPlus.setHours(20, 0, 0, 0);
-    }
 
     this.statusChanges.forEach((item, index) => {
       if (!item.status.updatedAt) {
@@ -94,11 +89,38 @@ export class TimeInStatus {
         from,
         to,
         status: item.status,
-        delta: instance.format(from, to),
-        pastEta: Boolean(etaPlus && to > etaPlus),
+        delta: formatDate(from, 'delta', to),
+        pastOriginalEta: Boolean(this.metadata.originalEta && to > this.metadata.originalEta),
+        pastActualEta: Boolean(this.actualEta && to > this.actualEta),
       })
     })
 
     return periods;
   }
+
+  isPastOriginalEta() {
+    if(!this.metadata.originalEta) {
+      return false;
+    }
+
+    return new Date() > this.metadata.originalEta;
+  }
+
+  isPastActualEta() {
+    if(!this.actualEta) {
+      return false;
+    }
+
+    return new Date() > this.actualEta;
+  }
+
+
+  originalEtaChanged() {
+    return this.metadata.originalEta !== this.actualEta;
+  }
+
+  originalStartChanged() {
+    return this.metadata.originalStart !== this.actualStart;
+  }
+
 }

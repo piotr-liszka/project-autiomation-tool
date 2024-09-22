@@ -1,7 +1,7 @@
 export class UserModel {
   constructor(
     public params: {
-      name: string | null;
+      uniqName: string | null;
     },
     public id?: string,
     public createdAt?: Date,

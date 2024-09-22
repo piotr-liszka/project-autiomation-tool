@@ -55,4 +55,8 @@ export class ContentModel<T = unknown> {
     return data.join('\n');
 
   }
+
+  setMetadata(metadata: T) {
+    this.params.metadata = metadata;
+  }
 }

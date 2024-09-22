@@ -1,9 +1,8 @@
 const reviewer = (key: string, value: unknown) => {
-  let a;
   if (typeof value === 'string') {
-    a = /\/Date\((\d*)\)\//.exec(value);
-    if (a) {
-      return new Date(+a[1]);
+    const date = new Date(value);
+    if(!isNaN(date.getTime())) {
+      return date;
     }
   }
   return value;
