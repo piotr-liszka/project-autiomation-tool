@@ -1,0 +1,10 @@
+name: times in status
+author: piotr-liszka
+description: This action is used to track the time issues spend in different statuses
+branding:
+  icon: check
+  color: green
+
+runs:
+  using: node20
+  main: ./dist/cli
