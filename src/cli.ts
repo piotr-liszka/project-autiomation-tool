@@ -1,42 +1,26 @@
 #!/usr/bin/env node
+import 'reflect-metadata';
+
 import {program} from 'commander';
 import clear from "clear";
 import figlet from "figlet";
 import i18n from "./assets/i18n.js";
-import {Logger} from "tslog";
-import {Console} from "node:console";
-import * as fs from "node:fs";
-import Configstore from 'configstore';
-import {GithubClient} from "./core/github-repository.js";
-import {timeInStatus} from "./times/times.command.js";
+import {TimeInStatusCommand} from "./times/times.command.js";
 import {ValidationError} from "./core/utils/error.js";
+import {Container} from "typedi";
+import {Config} from "./core/config/config.js";
+import {Logger} from "./core/logger/logger.js";
+import {GithubClient} from "./core/github-repository.js";
 
 clear();
 
-const consoleNode = new Console({stdout: process.stdout, stderr: process.stderr});
-consoleNode.log(figlet.textSync('Project Automation Tool', {
+const logger = Container.get(Logger);
+logger.register();
+logger.print(figlet.textSync('Project Automation Tool', {
   font: 'Mini',
   horizontalLayout: 'full',
 }));
 
-const logger = new Logger({
-  prettyLogTemplate: "{{hh}}:{{MM}}:{{ss}}:{{ms}}\t{{logLevelName}}\t[{{fileNameWithLine}}{{name}}]\t",
-  overwrite: {
-    transportFormatted: (msg, logArgs, logErrors) => {
-      consoleNode.log(msg, ...logArgs, ...logErrors);
-    }
-  }
-});
-
-console = {
-  ...console,
-  log: (...args) => logger.log(0, 'LOG', ...args),
-  debug: (...args) => logger.debug(args),
-  error: (...args) => logger.error(args),
-  info: (...args) => logger.info(args),
-}
-
-console.log("Logger initialized");
 
 program
   .version('1.0.0')
@@ -54,25 +38,6 @@ const catchErrors = async (param: () => Promise<void>) => {
   }
 }
 
-const initializeConfig = (configPath: string) => {
-  const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-
-  return new Configstore(packageJson.name, {foo: 'bar'}, {
-    configPath: configPath
-  });
-}
-
-const fromArgsOrConfig = (args: any, configStore: Configstore, key: string) => {
-  if (args[key]) {
-    const value = args[key];
-
-    configStore.set(key, value);
-    return value;
-  } else {
-    return configStore.get(key);
-  }
-}
-
 program
   .command('time-in-status')
   .description(i18n.timeInStatus)
@@ -81,27 +46,41 @@ program
   .option('-go, --ghOrganizationName <ghOrganizationName>', i18n.ghOrganizationName)
   .option('-gp, --ghProjectNumber <ghProjectNumber>', i18n.ghProjectNumber)
   .argument('<query>', i18n.queryToStart)
-  .action(async (query, args, command) => {
+  .action(async (query, args) => {
     await catchErrors(async () => {
-      const configStore = initializeConfig(args?.configFile ?? './config.json');
-      const organizationName = fromArgsOrConfig(args, configStore, 'ghOrganizationName');
-      const projectNumber = fromArgsOrConfig(args, configStore, 'ghProjectNumber');
+      const config = Container.get(Config);
+
+      if (args?.configFile) {
+        config.setConfigPath(args.configFile)
+      }
+
+      const organizationName = args.ghOrganizationName || config.get('github.organizationName');
+      const projectNumber = Number(args.ghProjectNumber || config.get('github.projectNumber'));
 
       if (!args.ghToken) {
         throw ValidationError.fromString(i18n.ghTokenRequired);
       }
 
-      const client = GithubClient.fromToken(args.ghToken, configStore);
+      if (!organizationName) {
+        throw ValidationError.fromString(i18n.ghOrganizationName);
+      }
 
-      await timeInStatus(
-        configStore,
+      if (!projectNumber) {
+        throw ValidationError.fromString(i18n.projectNumberRequired);
+      }
+
+      const githubClient = Container.get(GithubClient);
+      githubClient.authorize(args.ghToken)
+
+
+      const command = Container.get(TimeInStatusCommand);
+      await command.run(
         {
           query,
           organizationName,
           projectNumber
-        },
-        client
-      );
+        }
+      )
     })
   })
 

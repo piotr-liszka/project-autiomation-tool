@@ -1,10 +1,17 @@
 {
-	"ghOrganizationName": "acme",
-	"ghProjectNumber": 1,
-    "repoName": "lorem-ipsum",
-    "startStatus": "development",
-    "pathToRepo": "./",
-    "etaTransformer": {
-        "endOfTheDay": true
-    }
+  "github": {
+    "organizationName": "acme",
+    "projectNumber": 1
+  },
+  "eta": {
+    "enabled": true,
+    "transformToEndOfTheDay": true
+  },
+  "startDate": {
+    "enabled": true,
+    "status": "development"
+  },
+  "dateFormatter": {
+    "locale": "en"
+  }
 }

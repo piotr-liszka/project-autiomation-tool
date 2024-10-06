@@ -1,10 +1,10 @@
 import {ContentModel} from "./content.js";
 import {UserModel} from "./user.js";
 
-export class CommentModel {
+export class CommentModel<METADATA = unknown> {
   constructor(
     public params: {
-      content: ContentModel,
+      content: ContentModel<METADATA>,
       author?: UserModel,
     },
     public id?: string,
@@ -13,8 +13,8 @@ export class CommentModel {
   ) {
   }
 
-  static fromContent(content: ContentModel) {
-    return new CommentModel({
+  static fromContent<T>(content: ContentModel<T>) {
+    return new CommentModel<T>({
       content
     })
   }

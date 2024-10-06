@@ -2,18 +2,18 @@ import { parse } from "node-html-parser";
 import {serialize, unserialize} from "../utils/serializer.js";
 
 export type ContentType = string;
-export class ContentModel<T = unknown> {
+export class ContentModel<METADATA = unknown> {
   constructor(
     public params: {
       type?: ContentType,
       body?: string,
-      metadata?: T,
+      metadata?: METADATA,
     },
   ) {
   }
 
-  static empty(type: ContentType) {
-    return new ContentModel({
+  static empty<T>(type: ContentType) {
+    return new ContentModel<T>({
       type,
     })
   }
@@ -56,7 +56,7 @@ export class ContentModel<T = unknown> {
 
   }
 
-  setMetadata(metadata: T) {
+  setMetadata(metadata: METADATA) {
     this.params.metadata = metadata;
   }
 }

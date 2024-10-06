@@ -1,5 +1,5 @@
-import {IssueModel, IssueStatus} from "../../core/models/issue.js";
-import {formatDate} from "../../core/utils/date.js";
+import {IssueStatus} from "../../core/models/issue.js";
+import {CommentModel} from "../../core/models/comment.js";
 
 export type TimeInStatusMetadata = {
   originalStart?: Date,
@@ -11,77 +11,53 @@ export type TimeInStatusMetadata = {
 
 export class TimeInStatus {
   constructor(
-    public currentStatus: IssueStatus,
-    private commentMetadata: Partial<TimeInStatusMetadata>,
-    public actualStart?: Date,
+    public metadata: TimeInStatusMetadata = {},
+    public actualStartDate?: Date,
     public actualEta?: Date,
   ) {
   }
 
-  get statusChanges() {
-    return this.commentMetadata.statusChanges ?? [];
-  }
+  static fromComment(
+    comment: CommentModel<TimeInStatusMetadata>,
+    currentStatus: IssueStatus,
+    startDate?: Date,
+    eta?: Date,
+  ) {
+    const metadata = comment.params.content.params.metadata;
+    const statuses = metadata?.statusChanges ?? [];
 
-  static fromIssue(issue: IssueModel, metadata?: Partial<TimeInStatusMetadata>) {
-    if (!issue.params.id) {
-      throw new Error('Issue id is required to create a TimeInStatus');
+    if(metadata && statuses.length > 0 && statuses[statuses.length - 1].status.name !== currentStatus.name) {
+      metadata.statusChanges?.push({
+        status: currentStatus,
+      })
     }
 
     return new TimeInStatus(
-      issue.params.status,
-      {
-        ...metadata,
-        originalEta: metadata?.originalEta ?? issue.params.eta,
-        originalStart: metadata?.originalStart ?? issue.params.startDate,
-      },
-      issue.params.startDate,
-      issue.params.eta,
+      metadata,
+      startDate,
+      eta
     )
   }
 
-  statusChanged() {
-    if (this.statusChanges.length === 0) {
-      return true;
-    }
-
-    if (this.currentStatus.name !== this.statusChanges[this.statusChanges.length - 1]?.status.name) {
-      return true;
-    }
-
-    return false;
+  get #statusChanges() {
+    return this.metadata.statusChanges ?? [];
   }
-
-  addCurrentStatus() {
-    this.statusChanges.push({
-      status: this.currentStatus,
-    })
-  }
-
-  get metadata(): TimeInStatusMetadata {
-    return {
-      originalStart: this.commentMetadata.originalStart,
-      originalEta: this.commentMetadata.originalEta,
-      statusChanges: this.statusChanges
-    };
-  }
-
 
   recalculateDeltaTimes() {
     const periods = new Set<{
       from: Date,
       to: Date,
       status: IssueStatus,
-      delta: string,
       pastOriginalEta: boolean
       pastActualEta: boolean
     }>()
 
-    this.statusChanges.forEach((item, index) => {
+    this.#statusChanges.forEach((item, index) => {
       if (!item.status.updatedAt) {
         return;
       }
 
-      const nextUpdatedAt = this.statusChanges[index + 1]?.status?.updatedAt;
+      const nextUpdatedAt = this.#statusChanges[index + 1]?.status?.updatedAt;
 
       const from = new Date(item.status.updatedAt);
       const to = nextUpdatedAt ? new Date(nextUpdatedAt) : new Date();
@@ -89,7 +65,6 @@ export class TimeInStatus {
         from,
         to,
         status: item.status,
-        delta: formatDate(from, 'delta', to),
         pastOriginalEta: Boolean(this.metadata.originalEta && to > this.metadata.originalEta),
         pastActualEta: Boolean(this.actualEta && to > this.actualEta),
       })
@@ -99,7 +74,7 @@ export class TimeInStatus {
   }
 
   isPastOriginalEta() {
-    if(!this.metadata.originalEta) {
+    if (!this.metadata.originalEta) {
       return false;
     }
 
@@ -107,20 +82,18 @@ export class TimeInStatus {
   }
 
   isPastActualEta() {
-    if(!this.actualEta) {
+    if (!this.actualEta) {
       return false;
     }
 
     return new Date() > this.actualEta;
   }
 
-
   originalEtaChanged() {
     return this.metadata.originalEta !== this.actualEta;
   }
 
   originalStartChanged() {
-    return this.metadata.originalStart !== this.actualStart;
+    return this.metadata.originalStart !== this.actualStartDate;
   }
-
 }

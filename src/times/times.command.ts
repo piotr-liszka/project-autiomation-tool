@@ -1,9 +1,9 @@
 import {GithubClient} from "../core/github-repository.js";
-import {CommentModel} from "../core/models/comment.js";
-import {ContentModel} from "../core/models/content.js";
+import {Inject, Service} from "typedi";
+import {Config} from "../core/config/config.js";
 import {TimeInStatus, TimeInStatusMetadata} from "./models/time-in-status.js";
-import {formatDate} from "../core/utils/date.js";
-import Configstore from "configstore";
+import {DateFormatter} from "../core/date/date-formatter.js";
+import {markdown} from "markdown-doc-builder/lib/markdown/Markdown.js"
 
 type CommandParams = {
   query: string,
@@ -11,103 +11,120 @@ type CommandParams = {
   projectNumber: number
 };
 
-export const timeInStatus = async (
-  configstore: Configstore,
-  queryParams: CommandParams,
-  githubClient: GithubClient
-) => {
-  const projectDetails = await githubClient.getProjectV2Info(queryParams.organizationName, queryParams.projectNumber);
+@Service()
+export class TimeInStatusCommand {
+  constructor(
+    @Inject() private configstore: Config,
+    @Inject() private dateFormatter: DateFormatter,
+    @Inject() private githubClient: GithubClient,
+  ) {
+  }
 
-  let i = 0;
+  async run(
+    queryParams: CommandParams
+  ) {
+    const projectDetails = await this.githubClient.getProjectV2Info(queryParams.organizationName, queryParams.projectNumber);
+    const startDateEnabled = Boolean(this.configstore.get('startDate.enabled'));
+    const etaEnabled = Boolean(this.configstore.get('eta.enabled'));
 
-  for await (const response of githubClient.findIssues(projectDetails, queryParams)) {
-    if (response.status === 'error') {
-      console.error(response.error);
-      continue;
-    }
+    let index = 0;
 
-    const issue = response.model;
-    console.log(`${++i}/${response.total} start processing ${issue.ref}`);
-
-    const startStatusName = configstore.get('startStatus');
-    const isStartStatus = startStatusName && issue.params.status.name.toLowerCase().includes(startStatusName);
-
-    if (isStartStatus && !issue.params.startDate) {
-      const startDate = projectDetails.params.fields.find(item => item.name === 'start date');
-
-      if (startDate) {
-        await githubClient.updateField(issue, startDate.id, new Date());
-        console.log(`Start date updated`);
-      }
-    }
-
-    const comments = issue.params.comments;
-    let timeInStatusComment = comments.find(comment => comment.params.content.params.type === 'time-in-status')
-
-    if (!timeInStatusComment) {
-      timeInStatusComment = CommentModel.fromContent(
-        ContentModel.empty('time-in-status')
-      );
-    }
-
-    const content = timeInStatusComment.params.content as ContentModel<TimeInStatusMetadata>;
-    const times = TimeInStatus.fromIssue(issue, content.params.metadata);
-
-    if (times.statusChanged()) {
-      times.addCurrentStatus();
-      console.log('New status detected ' + issue.params.status.name);
-      content.setMetadata(times.metadata);
-    }
-
-    const periods = times.recalculateDeltaTimes();
-    let body = '';
-
-    body += '### Actual values \n';
-
-    if (times.actualStart) {
-      body += '🚀 Start date: ' + formatDate(times.actualStart, 'combined') + '\n';
-    }
-
-    if (times.actualEta) {
-      if(times.isPastActualEta()) {
-        body += '🔴 '
-      } else {
-        body += '🟢 '
-      }
-      body += 'ETA: ' + formatDate(times.actualEta, 'combined') + '\n';
-    }
-
-    if (times.isPastActualEta()) {
-      body += '⚠️ Issue is past ETA\n';
-    }
-
-    if (times.originalEtaChanged() || times.originalStartChanged()) {
-      body += '### Original values \n';
-
-      if (times.originalStartChanged() && times.metadata.originalStart) {
-        body += '🚀 Original Start: ' + formatDate(times.metadata.originalStart, 'combined') + '\n';
+    for await (const response of this.githubClient.findIssues(projectDetails, queryParams)) {
+      if (response.status === 'error') {
+        console.error(response.error);
+        continue;
       }
 
-      if (times.originalEtaChanged() && times.metadata.originalEta) {
-        if(times.isPastOriginalEta()) {
-          body += '🔴 '
-        } else {
-          body += '🟢 '
+      const issue = response.model;
+      console.log(`${++index}/${response.total} start processing ${issue.ref}`);
+
+      if (startDateEnabled && issue.statusEqualsTo(this.configstore.get('startDate.status')) && !issue.params.startDate) {
+        const startDate = projectDetails.params.fields.find(
+          item => item.name === 'start date'
+        );
+
+        if (startDate) {
+          await this.githubClient.updateField(issue, startDate.id, new Date());
+          console.log(`Start date updated`);
         }
-        body += 'Original ETA: ' + formatDate(times.metadata.originalEta, 'combined') + '\n';
       }
+
+      const comment = issue.getMetadataComment<TimeInStatusMetadata>('time-in-status');
+      const times = TimeInStatus.fromComment(
+        comment,
+        issue.params.status,
+        issue.params.startDate,
+        issue.params.eta
+      );
+      const periods = times.recalculateDeltaTimes();
+
+      const body = markdown.newBuilder().headerOrdered(false);
+
+      if(startDateEnabled || etaEnabled) {
+        body.h3('Actual values').newline();
+      }
+
+      if (startDateEnabled && times.actualStartDate) {
+        body.text('🚀 Start date: ' + this.dateFormatter.formatCombined(times.actualStartDate)).newline();
+      }
+
+      if (etaEnabled && times.actualEta) {
+        const indicator = times.isPastActualEta() ? '🔴' : '🟢';
+        body.text(indicator + ' ETA: ' + this.dateFormatter.formatCombined(times.actualEta)).newline();
+      }
+
+      if (etaEnabled && times.isPastActualEta()) {
+        body.text('⚠️ Issue is past ETA').newline();
+      }
+
+      if ((startDateEnabled || etaEnabled) && (times.originalEtaChanged() || times.originalStartChanged())) {
+        body.h3('Original values');
+        body.newline();
+
+        if (startDateEnabled && times.originalStartChanged() && times.metadata.originalStart) {
+          body.text('🚀 Original start date: ' + this.dateFormatter.formatCombined(times.metadata.originalStart));
+          body.newline();
+        }
+
+        if (etaEnabled && times.originalEtaChanged() && times.metadata.originalEta) {
+          const indicator = times.isPastOriginalEta() ? '🔴' : '🟢';
+          body.text(indicator + ' Original ETA: ' + this.dateFormatter.formatCombined(times.metadata.originalEta));
+          body.newline();
+        }
+      }
+
+      body.h3('Time in status');
+
+      const headers = ['ID', 'Status', 'Time in Status'];
+      if (etaEnabled) {
+        headers.push('Past Original ETA', 'Past Actual ETA');
+      }
+
+      const table = markdown.newTableBuilder(0, 5)
+        .header(headers)
+
+      Array.from(periods).forEach((period, index) => {
+        const row = [
+          String(index + 1),
+          period.status.name,
+          this.dateFormatter.formatDiff(period.from, period.to)
+        ];
+
+        if (etaEnabled) {
+          row.push(period.pastOriginalEta ? '⚠️' : '');
+          row.push(period.pastActualEta ? '⚠️' : '');
+        }
+
+        table.appendRow(row);
+      });
+      body.table(table);
+
+      comment.params.content.setMetadata(times.metadata);
+      comment.params.content.params.body = body.toMarkdown();
+
+      await this.githubClient.saveComment(issue, comment);
+
+      console.log(`Issue processed`);
     }
-
-    body += '## Status history \n';
-    body += '| id | status | time in status | past original ETA | past actual ETA | \n| :---:   | :---: | :---: | :---: | :--: |\n';
-
-    Array.from(periods).forEach((period, index) => {
-      body += `| ${index + 1} | ${period.status.name} |  ${period.delta} | ${period.pastOriginalEta ? '⚠️' : ''} | ${period.pastActualEta ? '⚠️' : ''} |\n`;
-    });
-    content.params.body = body
-    await githubClient.saveComment(issue, timeInStatusComment);
-
-    console.log(`Issue processed`);
-    console.log(body);
   }
 }

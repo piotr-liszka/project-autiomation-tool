@@ -8,9 +8,10 @@ import {IssueModel, IssuePriority, IssueStatus, IssueType} from "./models/issue.
 import {UserModel} from "./models/user.js";
 import {CommentModel} from "./models/comment.js";
 import {AppError} from "./utils/error.js";
-import Configstore from "configstore";
 import {ProjectModel} from "./models/project.js";
 import {PullRequestModel} from "./models/pull-request.js";
+import {Inject, Service} from "typedi";
+import {Config} from "./config/config.js";
 
 type Title = Partial<Record<'title', { text?: string }>>;
 type Status = Partial<Record<'status', { name?: string, id?: string, updatedAt: string, field: { id: string } }>>;
@@ -445,19 +446,22 @@ query getIssue($owner: String!, $repo: String!, $pullRequestId: Int!) {
     }
 }`
 
+@Service()
 export class GithubClient {
-  constructor(private graphqlClient: graphql, private configStore: Configstore) {
+  #graphqlClient?: graphql;
+
+  constructor(
+    @Inject() private config: Config
+  ) {
   }
 
-  static fromToken = (token: string, configStore: Configstore) => {
-    return new GithubClient(
-      graphqlInstance.defaults({
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      }),
-      configStore
-    );
+
+  authorize(token: string) {
+    this.#graphqlClient = graphqlInstance.defaults({
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    })
   }
 
   async getAuthorizedUser() {
@@ -636,7 +640,10 @@ export class GithubClient {
   }
 
   async #executeGraphQLQuery<T = unknown>(query: string, variables: Record<string, unknown>): Promise<T> {
-    return await this.graphqlClient<T>({query, ...variables});
+    if(!this.#graphqlClient) {
+      throw new Error('Client is not authorized');
+    }
+    return await this.#graphqlClient<T>({query, ...variables});
   }
 
   #transformSingleItem(
@@ -718,7 +725,7 @@ export class GithubClient {
     const startDate = projectV2Item?.start?.date ? new Date(projectV2Item?.start?.date) : undefined;
 
 
-    if (eta && this.configStore.get('etaTransformer.endOfTheDay')) {
+    if (eta && this.config.get('eta.transformToEndOfTheDay')) {
       eta.setHours(23, 59, 59, 999);
     }
 
@@ -750,9 +757,5 @@ export class GithubClient {
       issueItem.createdAt,
       issueItem.updatedAt,
     );
-  }
-
-  async updateBody(projectDetails: ProjectModel, repoName: string, foundPR: PullRequestModel) {
-    // todo
   }
 }
